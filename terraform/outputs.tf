@@ -22,3 +22,13 @@ output "vpc_id" {
   description = "VPC ID"
   value       = aws_vpc.main.id
 }
+
+output "github_actions_role_arn" {
+  description = "IAM role ARN for GitHub Actions OIDC deploy job"
+  value       = aws_iam_role.github_actions.arn
+}
+
+output "secret_key_arn" {
+  description = "Secrets Manager ARN for the application SECRET_KEY"
+  value       = aws_secretsmanager_secret.app_secret_key.arn
+}

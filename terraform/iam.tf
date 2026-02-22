@@ -20,6 +20,26 @@ resource "aws_iam_role_policy_attachment" "ecs_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# --- Secrets Manager read access for ECS execution role ---
+
+data "aws_iam_policy_document" "ecs_secrets" {
+  statement {
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.app_secret_key.arn]
+  }
+}
+
+resource "aws_iam_policy" "ecs_secrets" {
+  name   = "${var.app_name}-ecs-secrets"
+  policy = data.aws_iam_policy_document.ecs_secrets.json
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_secrets" {
+  role       = aws_iam_role.ecs_execution.name
+  policy_arn = aws_iam_policy.ecs_secrets.arn
+}
+
 # --- Task Role (app permissions) ---
 
 resource "aws_iam_role" "ecs_task" {

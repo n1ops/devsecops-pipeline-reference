@@ -24,6 +24,8 @@ This document provides a STRIDE-based threat analysis for the DevSecOps Task API
 | **Denial of Service** | Unbounded request size | Pydantic field length constraints | Implemented |
 | **Elevation of Privilege** | Container breakout | Non-root user in Dockerfile + Fargate isolation | Implemented |
 | **Elevation of Privilege** | IAM over-permissioning | Least-privilege task role with scoped policies | Implemented |
+| **Information Disclosure** | Hardcoded secrets in config | Secrets Manager injection at runtime; no secrets in image or env | Implemented |
+| **Spoofing** | Unauthorized deployment | OIDC federation restricts deploys to `main` branch only | Implemented |
 
 ### Security Controls Matrix
 
@@ -39,12 +41,14 @@ This document provides a STRIDE-based threat analysis for the DevSecOps Task API
 | Dynamic analysis (DAST) | OWASP ZAP | Stage 8 | Every push/PR |
 | Dependency updates | Dependabot | Automated PR | Weekly |
 | Security gate | Custom logic | Stage 9 | Every push/PR |
+| Secrets management | AWS Secrets Manager | Runtime injection | Continuous |
+| Deployment gate | OIDC + environment protection | Stage 10 | Push to main |
 
 ### Accepted Risks
 
 The following findings are intentionally present for scanner demonstration purposes:
 
-1. **Hardcoded default SECRET_KEY** (Bandit B105) — overridden via environment variable in production
+1. **Hardcoded default SECRET_KEY** (Bandit B105) — overridden via AWS Secrets Manager in production (injected by ECS at container startup)
 2. **`random.randint()` for JTI** (Bandit B311) — non-security-critical use (token tracking, not entropy)
 3. **python-jose 3.3.0 CVEs** (pip-audit) — demonstrating SCA detection capabilities
 4. **ALB without access logging** (Checkov CKV_AWS_91) — production would enable S3 logging

@@ -2,7 +2,7 @@
 
 [![Security Pipeline](https://github.com/YOUR_USERNAME/devsecops-pipeline-reference/actions/workflows/security-pipeline.yml/badge.svg)](https://github.com/YOUR_USERNAME/devsecops-pipeline-reference/actions/workflows/security-pipeline.yml)
 
-A production-grade **9-stage DevSecOps security pipeline** built with GitHub Actions, demonstrating end-to-end security automation for a Python FastAPI application deployed on AWS ECS Fargate.
+A production-grade **10-stage DevSecOps security pipeline** built with GitHub Actions, demonstrating end-to-end security automation for a Python FastAPI application deployed on AWS ECS Fargate.
 
 > **The pipeline is the star** — the app is scaffolding to give every scanner something real to analyze.
 
@@ -28,6 +28,10 @@ flowchart LR
     G[Stage 9\nSecurity Gate]
     H --> G
     I --> G
+
+    G --> J[Stage 10\nDeploy\nECS]
+
+    style J fill:#2ea44f,stroke:#22863a,color:#fff
 ```
 
 ## Security Tools
@@ -43,6 +47,7 @@ flowchart LR
 | 7 | **Syft** | SBOM generation (SPDX + CycloneDX) | Artifact |
 | 8 | **OWASP ZAP** | Dynamic application scan | HTML report |
 | 9 | **Security Gate** | Aggregate pass/fail decision | Pipeline status |
+| 10 | **ECS Deploy** | Push to ECR + rolling ECS update | Deployment |
 
 ## Intentional Findings
 
@@ -105,6 +110,29 @@ pip install checkov
 checkov -d terraform/
 ```
 
+### Deployment Setup
+
+Stage 10 deploys to ECS on push to `main` after the security gate passes. Prerequisites:
+
+1. **Apply Terraform** — provisions ECS, ECR, Secrets Manager, and OIDC resources:
+   ```bash
+   cd terraform
+   terraform init && terraform apply
+   ```
+2. **Set the SECRET_KEY** in Secrets Manager (replace the placeholder):
+   ```bash
+   aws secretsmanager put-secret-value \
+     --secret-id devsecops-task-api/secret-key \
+     --secret-string "$(openssl rand -hex 32)"
+   ```
+3. **Add GitHub repository secrets:**
+   | Secret | Value |
+   |--------|-------|
+   | `AWS_ACCOUNT_ID` | Your 12-digit AWS account ID |
+   | `AWS_ROLE_ARN` | `terraform output -raw github_actions_role_arn` |
+
+4. *(Optional)* Create a `production` GitHub Environment with required reviewers for manual approval before deploy.
+
 ## API Endpoints
 
 | Method | Endpoint | Description | Auth |
@@ -122,7 +150,7 @@ checkov -d terraform/
 
 ```
 devsecops-pipeline-reference/
-├── .github/workflows/    # 9-stage security pipeline
+├── .github/workflows/    # 10-stage security pipeline
 ├── app/                  # FastAPI application
 │   ├── routers/          # API route handlers
 │   ├── auth.py           # JWT authentication
@@ -131,6 +159,8 @@ devsecops-pipeline-reference/
 │   ├── models.py         # ORM models
 │   └── schemas.py        # Request/response schemas
 ├── terraform/            # AWS ECS Fargate IaC
+│   ├── oidc.tf           # GitHub Actions OIDC federation
+│   ├── secrets.tf        # Secrets Manager for SECRET_KEY
 ├── tests/                # pytest test suite
 ├── Dockerfile            # Multi-stage, non-root
 └── SECURITY.md           # STRIDE threat model
