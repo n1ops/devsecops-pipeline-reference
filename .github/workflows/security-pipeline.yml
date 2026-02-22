@@ -56,7 +56,7 @@ jobs:
         run: bandit -r app/ -c .bandit.yml -f sarif -o bandit-results.sarif || true
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: bandit-results.sarif
@@ -110,7 +110,7 @@ jobs:
         run: checkov -d terraform/ -o sarif --output-file-path . || true
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: results.sarif
@@ -159,7 +159,7 @@ jobs:
           trivyignores: ".trivyignore"
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-results.sarif
