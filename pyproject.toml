@@ -1,0 +1,11 @@
+[project]
+name = "devsecops-task-api"
+version = "1.0.0"
+description = "DevSecOps Pipeline Reference - Secure Task Management API"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "venv"]

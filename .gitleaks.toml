@@ -1,0 +1,12 @@
+title = "Gitleaks config for devsecops-pipeline-reference"
+
+[allowlist]
+  description = "Allowlisted patterns"
+  paths = [
+    '''\.gitleaks\.toml$''',
+    '''tests/.*''',
+  ]
+  regexes = [
+    '''development-secret-key-change-in-production''',
+    '''local-dev-secret-key''',
+  ]

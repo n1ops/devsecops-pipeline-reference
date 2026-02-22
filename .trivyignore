@@ -1,0 +1,3 @@
+# Trivy accepted risks
+# Add CVE IDs here to suppress known/accepted findings
+# Example: CVE-2023-XXXXX

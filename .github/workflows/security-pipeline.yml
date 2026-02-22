@@ -1,0 +1,280 @@
+name: DevSecOps Security Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+env:
+  IMAGE_NAME: devsecops-task-api
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Stage 1: Secret Detection
+  # ──────────────────────────────────────────────
+  secret-detection:
+    name: "Stage 1: Secret Detection (Gitleaks)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────
+  # Stage 2: Static Application Security Testing
+  # ──────────────────────────────────────────────
+  sast:
+    name: "Stage 2: SAST (Bandit)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Bandit
+        run: pip install bandit[sarif]
+
+      - name: Run Bandit
+        run: bandit -r app/ -c .bandit.yml -f sarif -o bandit-results.sarif || true
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit
+
+  # ──────────────────────────────────────────────
+  # Stage 3: Software Composition Analysis
+  # ──────────────────────────────────────────────
+  sca:
+    name: "Stage 3: SCA (pip-audit)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pip-audit
+
+      - name: Run pip-audit
+        run: pip-audit -r requirements.txt -f json -o pip-audit-results.json || true
+
+      - name: Upload pip-audit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-results
+          path: pip-audit-results.json
+
+  # ──────────────────────────────────────────────
+  # Stage 4: Infrastructure as Code Scanning
+  # ──────────────────────────────────────────────
+  iac-scan:
+    name: "Stage 4: IaC Scan (Checkov)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Run Checkov
+        run: checkov -d terraform/ -o sarif --output-file-path . || true
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+          category: checkov
+
+  # ──────────────────────────────────────────────
+  # Stage 5: Unit Tests
+  # ──────────────────────────────────────────────
+  unit-tests:
+    name: "Stage 5: Unit Tests (pytest)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  # ──────────────────────────────────────────────
+  # Stage 6: Container Scanning
+  # ──────────────────────────────────────────────
+  container-scan:
+    name: "Stage 6: Container Scan (Trivy)"
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH,MEDIUM"
+          trivyignores: ".trivyignore"
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+  # ──────────────────────────────────────────────
+  # Stage 7: SBOM Generation
+  # ──────────────────────────────────────────────
+  sbom:
+    name: "Stage 7: SBOM Generation (Syft)"
+    runs-on: ubuntu-latest
+    needs: container-scan
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          format: spdx-json
+          output-file: sbom-spdx.json
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          format: cyclonedx-json
+          output-file: sbom-cyclonedx.json
+
+      - name: Upload SBOMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-reports
+          path: |
+            sbom-spdx.json
+            sbom-cyclonedx.json
+
+  # ──────────────────────────────────────────────
+  # Stage 8: Dynamic Application Security Testing
+  # ──────────────────────────────────────────────
+  dast:
+    name: "Stage 8: DAST (OWASP ZAP)"
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies and start app
+        run: |
+          pip install -r requirements.txt
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          sleep 5
+
+      - name: OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: "http://localhost:8000"
+          rules_file_name: ""
+          allow_issue_writing: false
+          cmd_options: "-a -j"
+
+  # ──────────────────────────────────────────────
+  # Stage 9: Security Gate
+  # ──────────────────────────────────────────────
+  security-gate:
+    name: "Stage 9: Security Gate"
+    runs-on: ubuntu-latest
+    needs:
+      - secret-detection
+      - sast
+      - sca
+      - iac-scan
+      - unit-tests
+      - container-scan
+      - sbom
+      - dast
+    if: always()
+    steps:
+      - name: Check pipeline results
+        run: |
+          echo "========================================="
+          echo "   DevSecOps Security Gate Summary"
+          echo "========================================="
+          echo ""
+          echo "Stage 1 - Secret Detection: ${{ needs.secret-detection.result }}"
+          echo "Stage 2 - SAST (Bandit):    ${{ needs.sast.result }}"
+          echo "Stage 3 - SCA (pip-audit):  ${{ needs.sca.result }}"
+          echo "Stage 4 - IaC (Checkov):    ${{ needs.iac-scan.result }}"
+          echo "Stage 5 - Unit Tests:       ${{ needs.unit-tests.result }}"
+          echo "Stage 6 - Container Scan:   ${{ needs.container-scan.result }}"
+          echo "Stage 7 - SBOM Generation:  ${{ needs.sbom.result }}"
+          echo "Stage 8 - DAST (ZAP):       ${{ needs.dast.result }}"
+          echo ""
+
+          # Gate logic: fail only on CRITICAL stages
+          CRITICAL_FAILURES=0
+
+          if [ "${{ needs.secret-detection.result }}" == "failure" ]; then
+            echo "CRITICAL: Secret detection found issues!"
+            CRITICAL_FAILURES=$((CRITICAL_FAILURES + 1))
+          fi
+
+          if [ "${{ needs.unit-tests.result }}" == "failure" ]; then
+            echo "CRITICAL: Unit tests failed!"
+            CRITICAL_FAILURES=$((CRITICAL_FAILURES + 1))
+          fi
+
+          if [ $CRITICAL_FAILURES -gt 0 ]; then
+            echo ""
+            echo "GATE RESULT: FAILED ($CRITICAL_FAILURES critical failure(s))"
+            exit 1
+          else
+            echo "GATE RESULT: PASSED (non-critical findings are tracked in Security tab)"
+          fi
