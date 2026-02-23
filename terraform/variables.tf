@@ -51,3 +51,9 @@ variable "github_repo" {
   type        = string
   default     = "n1ops/devsecops-pipeline-reference"
 }
+
+variable "alert_email" {
+  description = "Email address for CloudWatch alarm notifications"
+  type        = string
+  default     = ""
+}

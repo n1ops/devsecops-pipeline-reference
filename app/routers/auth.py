@@ -98,9 +98,13 @@ def login(request: Request, user_in: UserLogin, db: Session = Depends(get_db)):
             detail="Invalid username or password",
         )
 
-    # Reset lockout on successful login
-    user.failed_login_attempts = 0
-    user.locked_until = None
+    # Reset lockout on successful login (atomic update)
+    db.execute(
+        update(User).where(User.id == user.id).values(
+            failed_login_attempts=0,
+            locked_until=None,
+        )
+    )
     db.commit()
 
     access_token = create_access_token(data={"sub": user.username})

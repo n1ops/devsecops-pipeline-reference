@@ -450,3 +450,20 @@ def test_register_duplicate_generic_message(client):
     )
     assert resp.status_code == 409
     assert "already registered" not in resp.json()["detail"].lower()
+
+
+def test_token_missing_jti_rejected(client):
+    """JWT without 'jti' claim should be rejected."""
+    import jwt as _jwt
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "sub": "testuser",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+        "iat": datetime.now(timezone.utc),
+        "iss": "DevSecOps Task API",
+        "aud": "DevSecOps Task API",
+    }
+    token = _jwt.encode(payload, "test-secret-key-for-testing-only-not-production", algorithm="HS256")
+    resp = client.get("/tasks/", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401

@@ -56,13 +56,62 @@ def test_docs_hidden_in_production(client):
 # --- CORS Tests ---
 
 def test_cors_preflight(client):
-    """CORS preflight should return appropriate headers."""
+    """CORS preflight should return appropriate CORS headers."""
     resp = client.options(
         "/health",
         headers={
             "Origin": "http://example.com",
             "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "Authorization",
         },
     )
-    # In debug mode with wildcard origins, CORS should respond
     assert resp.status_code == 200
+    # Verify CORS headers are present
+    assert resp.headers.get("access-control-allow-origin") is not None
+    allowed_methods = resp.headers.get("access-control-allow-methods", "")
+    assert "GET" in allowed_methods
+    allowed_headers = resp.headers.get("access-control-allow-headers", "")
+    assert "authorization" in allowed_headers.lower()
+
+
+def test_body_size_limit_rejected(client, auth_header):
+    """Requests with Content-Length exceeding 1MB should be rejected with 413."""
+    oversized_body = "x" * (1_048_576 + 1)  # 1MB + 1 byte
+    resp = client.post(
+        "/tasks/",
+        content=oversized_body.encode(),
+        headers={**auth_header, "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 413
+    assert "too large" in resp.json()["detail"].lower()
+
+
+def test_docs_hidden_when_debug_false():
+    """OpenAPI docs should return 404 when DEBUG=false."""
+    import os
+    # The app is already imported with DEBUG=true, so we test the config logic directly
+    from app.config import Settings
+    prod_settings = Settings(DEBUG=False, SECRET_KEY="test-prod-key-minimum-length-32chars!")
+    assert prod_settings.DEBUG is False
+    # Verify the FastAPI app would hide docs with these settings
+    from fastapi import FastAPI
+    prod_app = FastAPI(
+        docs_url="/docs" if prod_settings.DEBUG else None,
+        redoc_url="/redoc" if prod_settings.DEBUG else None,
+        openapi_url="/openapi.json" if prod_settings.DEBUG else None,
+    )
+    from fastapi.testclient import TestClient
+    with TestClient(prod_app) as c:
+        resp = c.get("/docs")
+        assert resp.status_code == 404
+        resp = c.get("/openapi.json")
+        assert resp.status_code == 404
+
+
+def test_security_headers_on_error_responses(client):
+    """Security headers should be present on 404 error responses too."""
+    resp = client.get("/nonexistent-path")
+    assert resp.headers.get("x-content-type-options") == "nosniff"
+    assert resp.headers.get("x-frame-options") == "DENY"
+    assert resp.headers.get("x-request-id") is not None
+    assert "max-age=31536000" in resp.headers.get("strict-transport-security", "")

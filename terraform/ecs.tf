@@ -99,6 +99,23 @@ resource "aws_ecs_service" "app" {
   depends_on = [aws_lb_listener.http]
 }
 
+# --- SNS Alert Topic ---
+
+resource "aws_sns_topic" "alerts" {
+  name = "${var.app_name}-alerts"
+
+  tags = {
+    Name = "${var.app_name}-alerts"
+  }
+}
+
+resource "aws_sns_topic_subscription" "email" {
+  count     = var.alert_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
 # --- CloudWatch Alarms ---
 
 resource "aws_cloudwatch_metric_alarm" "ecs_cpu_high" {
@@ -111,6 +128,8 @@ resource "aws_cloudwatch_metric_alarm" "ecs_cpu_high" {
   statistic           = "Average"
   threshold           = 80
   alarm_description   = "ECS CPU utilization above 80%"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
 
   dimensions = {
     ClusterName = aws_ecs_cluster.main.name
@@ -132,6 +151,8 @@ resource "aws_cloudwatch_metric_alarm" "ecs_memory_high" {
   statistic           = "Average"
   threshold           = 80
   alarm_description   = "ECS memory utilization above 80%"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
 
   dimensions = {
     ClusterName = aws_ecs_cluster.main.name
@@ -153,6 +174,8 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx_errors" {
   statistic           = "Sum"
   threshold           = 10
   alarm_description   = "ALB 5xx errors exceed threshold"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
   treat_missing_data  = "notBreaching"
 
   dimensions = {

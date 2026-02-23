@@ -65,13 +65,13 @@ def get_current_user(
         )
         username: str | None = payload.get("sub")
         jti: str | None = payload.get("jti")
-        if username is None:
+        if username is None or jti is None:
             raise credentials_exception
     except PyJWTError:
         raise credentials_exception
 
     # Check token blocklist
-    if jti and db.query(TokenBlocklist).filter(TokenBlocklist.jti == jti).first():
+    if db.query(TokenBlocklist).filter(TokenBlocklist.jti == jti).first():
         logger.warning("Blocked token used: jti=%s", jti)
         raise credentials_exception
 

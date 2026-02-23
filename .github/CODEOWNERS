@@ -1,2 +1,8 @@
-# Protect CI/CD pipeline from unauthorized changes
-/.github/ @n1ops
+# Protect security-critical paths — changes require review from @n1ops
+/.github/       @n1ops
+/terraform/     @n1ops
+/Dockerfile     @n1ops
+/app/auth.py    @n1ops
+/app/config.py  @n1ops
+.bandit.yml     @n1ops
+.trivyignore    @n1ops

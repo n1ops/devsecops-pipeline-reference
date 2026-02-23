@@ -101,7 +101,7 @@ class RequestIDMiddleware:
 
 # --- Pure ASGI Request Body Size Limit Middleware ---
 class MaxBodySizeMiddleware:
-    """Reject requests with Content-Length exceeding the limit."""
+    """Reject requests with body exceeding the size limit, regardless of transfer encoding."""
     MAX_BODY_BYTES = 1_048_576  # 1 MB
 
     def __init__(self, app):
@@ -112,17 +112,44 @@ class MaxBodySizeMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Fast path: reject immediately if Content-Length exceeds limit
         headers = dict(scope.get("headers", []))
         content_length = headers.get(b"content-length")
-        if content_length and int(content_length) > self.MAX_BODY_BYTES:
-            response = JSONResponse(
-                status_code=413,
-                content={"detail": "Request body too large"},
-            )
-            await response(scope, receive, send)
-            return
+        if content_length:
+            try:
+                if int(content_length) > self.MAX_BODY_BYTES:
+                    response = JSONResponse(
+                        status_code=413,
+                        content={"detail": "Request body too large"},
+                    )
+                    await response(scope, receive, send)
+                    return
+            except (ValueError, TypeError):
+                pass  # Malformed Content-Length; let the ASGI server handle it
 
-        await self.app(scope, receive, send)
+        # Streaming path: wrap receive to count bytes (handles chunked encoding)
+        bytes_received = 0
+
+        async def counting_receive():
+            nonlocal bytes_received
+            message = await receive()
+            if message["type"] == "http.request":
+                bytes_received += len(message.get("body", b""))
+                if bytes_received > self.MAX_BODY_BYTES:
+                    raise ValueError("Request body too large")
+            return message
+
+        try:
+            await self.app(scope, counting_receive, send)
+        except ValueError as e:
+            if "Request body too large" in str(e):
+                response = JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body too large"},
+                )
+                await response(scope, receive, send)
+            else:
+                raise
 
 
 # --- Rate Limiting ---
