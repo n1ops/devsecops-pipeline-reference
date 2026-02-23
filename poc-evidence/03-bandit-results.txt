@@ -1,0 +1,46 @@
+[main]	INFO	profile include tests: None
+[main]	INFO	profile exclude tests: None
+[main]	INFO	cli include tests: None
+[main]	INFO	cli exclude tests: None
+[main]	INFO	using config: .bandit.yml
+[main]	INFO	running on Python 3.11.9
+Run started:2026-02-23 00:09:01.125600
+
+Test results:
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.7.7/blacklists/blacklist_calls.html#b311-random
+   Location: app/auth.py:33:27
+32	    # INTENTIONAL: B311 - using random.randint for non-crypto jti field (scanner demo)
+33	    to_encode["jti"] = str(random.randint(100000, 999999))
+34	    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'development-secret-key-change-in-production'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.7.7/plugins/b105_hardcoded_password_string.html
+   Location: app/config.py:4:18
+3	# INTENTIONAL: B105 - hardcoded default secret key for scanner demonstration
+4	_DEFAULT_SECRET = "development-secret-key-change-in-production"
+5	
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 245
+	Total lines skipped (#nosec): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 2
+		Medium: 0
+		High: 0
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 0
+		Medium: 1
+		High: 1
+Files skipped (0):
