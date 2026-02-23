@@ -47,6 +47,7 @@ When everything passes, the pipeline deploys to **AWS ECS Fargate** using keyles
 - [STRIDE Threat Model](#stride-threat-model)
 - [Quick Start](#quick-start)
 - [Deployment](#deployment)
+- [How to Use This Pipeline](#how-to-use-this-pipeline)
 - [API Reference](#api-reference)
 - [Project Structure](#project-structure)
 - [License](#license)
@@ -572,6 +573,116 @@ Creates an SNS email subscription for CPU, memory, and 5xx alarm notifications.
 ### 5. (Optional) GitHub Environment Protection
 
 Create a `production` GitHub Environment with required reviewers for manual approval before deploy.
+
+---
+
+## How to Use This Pipeline
+
+Once the infrastructure is provisioned and the GitHub secret is configured (see [Deployment](#deployment)), deploying code through the pipeline is straightforward. You don't run the pipeline manually — it runs automatically every time you push code or open a pull request.
+
+### The day-to-day workflow
+
+```
+  You write code locally
+        │
+        ▼
+  Push to a feature branch ──► Open a Pull Request
+        │                              │
+        │                   Pipeline runs automatically
+        │                   (Stages 1-9, no deploy)
+        │                              │
+        │                    ┌─────────┴──────────┐
+        │                    │                     │
+        │              All stages pass       Something fails
+        │                    │                     │
+        │              Merge to main        Fix the issue,
+        │                    │              push again
+        │                    ▼              (pipeline re-runs)
+        │            Pipeline runs again
+        │            on main (Stages 1-10)
+        │                    │
+        │              Security Gate passes
+        │                    │
+        │                    ▼
+        │            Auto-deploys to AWS ECS
+        ▼
+  Your changes are live
+```
+
+### Step by step
+
+**1. Create a branch and make your changes**
+
+```bash
+git checkout -b feature/add-new-endpoint
+# ... edit files ...
+```
+
+**2. Run checks locally before pushing (optional but recommended)**
+
+```bash
+# Run the test suite
+pytest tests/ -v
+
+# Run the SAST scanner
+bandit -r app/ -c .bandit.yml
+
+# Check dependencies for known vulnerabilities
+pip-audit -r requirements.txt
+```
+
+These are the same tools the pipeline uses. Running them locally means fewer surprises when you push.
+
+**3. Push your branch and open a pull request**
+
+```bash
+git push -u origin feature/add-new-endpoint
+```
+
+Then open a pull request on GitHub targeting `main`. The moment the PR is created (or updated with new commits), the pipeline starts automatically.
+
+**4. Review the pipeline results**
+
+Go to the **Actions** tab in the GitHub repository. You'll see the pipeline running with all 11 stages. Each stage shows a green checkmark or red X:
+
+- **Green across the board** — your code passed all security checks. The PR is safe to merge.
+- **Red on any stage** — click into the failed stage to see what went wrong. Common issues:
+  - *Secret Detection failed* — you accidentally committed a credential. Remove it, rotate the secret, and push again.
+  - *SCA failed* — a dependency has a known vulnerability. Update the package version in `requirements.txt`.
+  - *Unit Tests failed* — a test is broken. Read the pytest output to see which test and why.
+  - *SAST/IaC findings* — Bandit or Checkov found a code or infrastructure issue. Review the SARIF results in the Security tab.
+
+**5. Merge to main**
+
+Once the pipeline passes and the PR is reviewed, merge it into `main`. This triggers the pipeline again — but this time, because the code is going to `main`, **Stage 10 (Deploy)** is included.
+
+If the Security Gate passes, the pipeline automatically:
+1. Pushes your Docker image to AWS ECR
+2. Registers a new ECS task definition
+3. Rolls out the new version to ECS Fargate
+4. Waits for the deployment to stabilize
+
+You don't need to SSH into a server, run any deploy commands, or touch the AWS console. The pipeline handles everything.
+
+**6. Verify the deployment**
+
+After the pipeline finishes, your changes are live. You can verify by hitting the health check:
+
+```bash
+curl https://your-api-domain.com/health
+```
+
+### What happens if I push directly to main?
+
+The pipeline runs the same way — all 11 stages including deploy. But in a team setting, you should use pull requests so the pipeline results are visible before code reaches `main`. Branch protection rules can enforce this.
+
+### What if the deploy fails but all security stages passed?
+
+The security gate (Stages 1-9) and the deploy (Stage 10) are separate. If the deploy fails — for example, because the ECS health check times out — your security stages are still green. The issue is operational (infrastructure, environment variables, resource limits), not a code security problem. Check the deploy step logs in the Actions tab for details.
+
+### What if I only changed Terraform files?
+
+The same pipeline runs. Checkov (Stage 4) will scan your infrastructure changes. The application stages (tests, container scan, DAST) still run to confirm nothing is broken. The deploy stage will push the same application image — Terraform changes need to be applied separately with `terraform apply`.
 
 ---
 
