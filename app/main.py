@@ -4,7 +4,6 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -154,7 +153,16 @@ class MaxBodySizeMiddleware:
 
 # --- Rate Limiting ---
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+@app.exception_handler(RateLimitExceeded)
+async def custom_rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    retry_after = getattr(exc, "detail", "60")
+    # Extract seconds from slowapi's detail string (e.g., "Rate limit exceeded: 5 per 1 minute")
+    response = JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded"},
+    )
+    response.headers["Retry-After"] = "60"
+    return response
 
 # Middleware ordering: add_middleware wraps outermost-last.
 # Execution order (request): SecurityHeaders -> RequestID -> CORS -> SlowAPI -> App

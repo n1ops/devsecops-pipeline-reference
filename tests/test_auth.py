@@ -467,3 +467,78 @@ def test_token_missing_jti_rejected(client):
     token = _jwt.encode(payload, "test-secret-key-for-testing-only-not-production", algorithm="HS256")
     resp = client.get("/tasks/", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 401
+
+
+def test_refresh_token(client):
+    """Refresh endpoint should return new token and revoke old one."""
+    client.post(
+        "/auth/register",
+        json={"username": "refreshuser", "password": "SecurePass123!"},
+    )
+    resp = client.post(
+        "/auth/login",
+        json={"username": "refreshuser", "password": "SecurePass123!"},
+    )
+    old_token = resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {old_token}"}
+
+    # Refresh
+    resp = client.post("/auth/refresh", headers=headers)
+    assert resp.status_code == 200
+    new_token = resp.json()["access_token"]
+    assert new_token != old_token
+
+    # Old token should be revoked
+    resp = client.get("/tasks/", headers={"Authorization": f"Bearer {old_token}"})
+    assert resp.status_code == 401
+
+    # New token should work
+    resp = client.get("/tasks/", headers={"Authorization": f"Bearer {new_token}"})
+    assert resp.status_code == 200
+
+
+def test_cleanup_expired_tokens(client):
+    """cleanup_expired_tokens should delete expired entries and keep valid ones."""
+    from datetime import datetime, timedelta, timezone
+    from app.auth import cleanup_expired_tokens
+    from app.models import TokenBlocklist
+    from app.database import get_db
+
+    # Get a DB session from the client's dependency override
+    db_gen = client.app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        # Insert an expired token (expires_at in the past)
+        expired_entry = TokenBlocklist(
+            jti="expired-jti-test-001",
+            expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+        db.add(expired_entry)
+
+        # Insert a valid token (expires_at in the future)
+        valid_entry = TokenBlocklist(
+            jti="valid-jti-test-001",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        db.add(valid_entry)
+        db.commit()
+
+        # Run cleanup
+        deleted_count = cleanup_expired_tokens(db)
+
+        # Assert the expired entry was deleted
+        assert deleted_count == 1
+
+        # Assert the expired entry is gone
+        remaining_expired = db.query(TokenBlocklist).filter(
+            TokenBlocklist.jti == "expired-jti-test-001"
+        ).first()
+        assert remaining_expired is None
+
+        # Assert the valid entry still exists
+        remaining_valid = db.query(TokenBlocklist).filter(
+            TokenBlocklist.jti == "valid-jti-test-001"
+        ).first()
+        assert remaining_valid is not None
+    finally:
+        db.close()

@@ -115,3 +115,24 @@ def test_security_headers_on_error_responses(client):
     assert resp.headers.get("x-frame-options") == "DENY"
     assert resp.headers.get("x-request-id") is not None
     assert "max-age=31536000" in resp.headers.get("strict-transport-security", "")
+
+
+def test_generic_exception_handler_returns_safe_json():
+    """Unhandled exceptions should return safe JSON without stack traces or internals."""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    @app.get("/test-500-trigger")
+    def trigger_500():
+        raise RuntimeError("boom")
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as c:
+            resp = c.get("/test-500-trigger")
+            assert resp.status_code == 500
+            assert resp.json() == {"detail": "Internal server error"}
+            assert "Traceback" not in resp.text
+            assert "boom" not in resp.text
+    finally:
+        # Remove the temporary route
+        app.routes[:] = [r for r in app.routes if getattr(r, "path", None) != "/test-500-trigger"]

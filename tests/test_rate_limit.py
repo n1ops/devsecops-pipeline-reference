@@ -110,3 +110,172 @@ def test_task_create_rate_limit(client_with_rate_limit):
         headers=headers,
     )
     assert resp.status_code == 429
+
+
+def test_task_list_rate_limit(client_with_rate_limit):
+    """Task list endpoint should return 429 after exceeding 30 requests/minute."""
+    from app.rate_limit import limiter
+    limiter.reset()
+    client = client_with_rate_limit
+
+    # Register and login
+    client.post(
+        "/auth/register",
+        json={"username": "listrateuser", "password": "SecurePass123!"},
+    )
+    resp = client.post(
+        "/auth/login",
+        json={"username": "listrateuser", "password": "SecurePass123!"},
+    )
+    token = resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Send 30 list requests (limit is 30/minute)
+    for i in range(30):
+        client.get("/tasks/", headers=headers)
+
+    # 31st request should be rate limited
+    resp = client.get("/tasks/", headers=headers)
+    assert resp.status_code == 429
+
+
+def test_task_get_rate_limit(client_with_rate_limit):
+    """Task get endpoint should return 429 after exceeding 30 requests/minute."""
+    from app.rate_limit import limiter
+    limiter.reset()
+    client = client_with_rate_limit
+
+    # Register and login
+    client.post(
+        "/auth/register",
+        json={"username": "getrateuser", "password": "SecurePass123!"},
+    )
+    resp = client.post(
+        "/auth/login",
+        json={"username": "getrateuser", "password": "SecurePass123!"},
+    )
+    token = resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create a task to fetch
+    resp = client.post(
+        "/tasks/",
+        json={"title": "Rate limit get task"},
+        headers=headers,
+    )
+    task_id = resp.json()["id"]
+
+    # Send 30 get requests (limit is 30/minute)
+    for i in range(30):
+        client.get(f"/tasks/{task_id}", headers=headers)
+
+    # 31st request should be rate limited
+    resp = client.get(f"/tasks/{task_id}", headers=headers)
+    assert resp.status_code == 429
+
+
+def test_task_update_rate_limit(client_with_rate_limit):
+    """Task update endpoint should return 429 after exceeding 20 requests/minute."""
+    from app.rate_limit import limiter
+    limiter.reset()
+    client = client_with_rate_limit
+
+    # Register and login
+    client.post(
+        "/auth/register",
+        json={"username": "updaterateuser", "password": "SecurePass123!"},
+    )
+    resp = client.post(
+        "/auth/login",
+        json={"username": "updaterateuser", "password": "SecurePass123!"},
+    )
+    token = resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create a task to update
+    resp = client.post(
+        "/tasks/",
+        json={"title": "Rate limit update task"},
+        headers=headers,
+    )
+    task_id = resp.json()["id"]
+
+    # Send 20 update requests (limit is 20/minute)
+    for i in range(20):
+        client.patch(
+            f"/tasks/{task_id}",
+            json={"title": f"Updated title {i}"},
+            headers=headers,
+        )
+
+    # 21st request should be rate limited
+    resp = client.patch(
+        f"/tasks/{task_id}",
+        json={"title": "One too many updates"},
+        headers=headers,
+    )
+    assert resp.status_code == 429
+
+
+def test_task_delete_rate_limit(client_with_rate_limit):
+    """Task delete endpoint should return 429 after exceeding 10 requests/minute."""
+    from app.rate_limit import limiter
+    limiter.reset()
+    client = client_with_rate_limit
+
+    # Register and login
+    client.post(
+        "/auth/register",
+        json={"username": "deleterateuser", "password": "SecurePass123!"},
+    )
+    resp = client.post(
+        "/auth/login",
+        json={"username": "deleterateuser", "password": "SecurePass123!"},
+    )
+    token = resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create one task
+    resp = client.post(
+        "/tasks/",
+        json={"title": "Delete rate task"},
+        headers=headers,
+    )
+    task_id = resp.json()["id"]
+
+    # Send 10 delete requests to the same path (first deletes, rest get 404,
+    # but all count against the rate limit since the limiter fires before the handler)
+    for i in range(10):
+        client.delete(f"/tasks/{task_id}", headers=headers)
+
+    # 11th request should be rate limited
+    resp = client.delete(f"/tasks/{task_id}", headers=headers)
+    assert resp.status_code == 429
+
+
+def test_rate_limit_returns_retry_after_header(client_with_rate_limit):
+    """429 responses should include a Retry-After header."""
+    from app.rate_limit import limiter
+    limiter.reset()
+    client = client_with_rate_limit
+
+    # Register a user
+    client.post(
+        "/auth/register",
+        json={"username": "retryafteruser", "password": "SecurePass123!"},
+    )
+
+    # Exceed login rate limit (5/minute)
+    for i in range(5):
+        client.post(
+            "/auth/login",
+            json={"username": "retryafteruser", "password": "WrongPass123!"},
+        )
+
+    resp = client.post(
+        "/auth/login",
+        json={"username": "retryafteruser", "password": "WrongPass123!"},
+    )
+    assert resp.status_code == 429
+    assert "Retry-After" in resp.headers
+    assert resp.headers["Retry-After"] == "60"

@@ -1,5 +1,3 @@
-# INTENTIONAL: CKV_AWS_2 - HTTP listener, no HTTPS (scanner demonstration)
-
 data "aws_elb_service_account" "main" {}
 
 resource "aws_s3_bucket" "alb_logs" {
@@ -99,6 +97,47 @@ resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.app.arn
   port              = 80
   protocol          = "HTTP"
+
+  default_action {
+    type = var.domain_name != "" ? "redirect" : "forward"
+
+    dynamic "redirect" {
+      for_each = var.domain_name != "" ? [1] : []
+      content {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+
+    # Forward when no domain configured (HTTP-only mode)
+    target_group_arn = var.domain_name == "" ? aws_lb_target_group.app.arn : null
+  }
+}
+
+# --- HTTPS / TLS ---
+
+resource "aws_acm_certificate" "app" {
+  count             = var.domain_name != "" ? 1 : 0
+  domain_name       = var.domain_name
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name = "${var.app_name}-cert"
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  count             = var.domain_name != "" ? 1 : 0
+  load_balancer_arn = aws_lb.app.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = aws_acm_certificate.app[0].arn
 
   default_action {
     type             = "forward"

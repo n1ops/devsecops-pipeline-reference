@@ -149,3 +149,17 @@ def change_password(
     db.commit()
     logger.info("Password changed for user: %s", current_user.username)
     return {"detail": "Password changed successfully"}
+
+
+@router.post("/refresh", response_model=Token)
+@limiter.limit("5/minute")
+def refresh_token(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    revoke_token(token, db)
+    new_token = create_access_token(data={"sub": current_user.username})
+    logger.info("Token refreshed for user: %s", current_user.username)
+    return {"access_token": new_token}

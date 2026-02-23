@@ -63,6 +63,28 @@ jobs:
           category: bandit
 
   # ──────────────────────────────────────────────
+  # Stage 2b: CodeQL Analysis
+  # ──────────────────────────────────────────────
+  codeql:
+    name: "Stage 2b: CodeQL Analysis"
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4.32.4
+        with:
+          languages: python
+          queries: +security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4.32.4
+        with:
+          category: codeql
+
+  # ──────────────────────────────────────────────
   # Stage 3: Software Composition Analysis
   # ──────────────────────────────────────────────
   sca:
@@ -107,7 +129,7 @@ jobs:
         run: pip install 'checkov==3.2.0'
 
       - name: Run Checkov
-        run: checkov -d terraform/ -o sarif --output-file-path . --skip-check CKV_AWS_2,CKV_AWS_158
+        run: checkov -d terraform/ -o sarif --output-file-path .
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4.32.4
@@ -256,6 +278,7 @@ jobs:
     needs:
       - secret-detection
       - sast
+      - codeql
       - sca
       - iac-scan
       - unit-tests
@@ -272,6 +295,7 @@ jobs:
           echo ""
           echo "Stage 1 - Secret Detection: ${{ needs.secret-detection.result }}"
           echo "Stage 2 - SAST (Bandit):    ${{ needs.sast.result }}"
+          echo "Stage 2b - CodeQL:        ${{ needs.codeql.result }}"
           echo "Stage 3 - SCA (pip-audit):  ${{ needs.sca.result }}"
           echo "Stage 4 - IaC (Checkov):    ${{ needs.iac-scan.result }}"
           echo "Stage 5 - Unit Tests:       ${{ needs.unit-tests.result }}"

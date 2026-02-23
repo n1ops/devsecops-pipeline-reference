@@ -57,3 +57,9 @@ variable "alert_email" {
   type        = string
   default     = ""
 }
+
+variable "domain_name" {
+  description = "Domain name for ACM certificate and HTTPS listener"
+  type        = string
+  default     = ""
+}

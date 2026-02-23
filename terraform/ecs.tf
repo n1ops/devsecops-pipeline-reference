@@ -7,10 +7,55 @@ resource "aws_ecs_cluster" "main" {
   }
 }
 
-# INTENTIONAL: CKV_AWS_158 - Log group without KMS encryption (scanner demonstration)
+resource "aws_kms_key" "logs" {
+  description             = "KMS key for CloudWatch log encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowRootAccount"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowCloudWatchLogs"
+        Effect = "Allow"
+        Principal = {
+          Service = "logs.${var.aws_region}.amazonaws.com"
+        }
+        Action = [
+          "kms:Encrypt*",
+          "kms:Decrypt*",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:Describe*"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.app_name}-logs-kms"
+  }
+}
+
+resource "aws_kms_alias" "logs" {
+  name          = "alias/${var.app_name}-logs"
+  target_key_id = aws_kms_key.logs.key_id
+}
+
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${var.app_name}"
   retention_in_days = 30
+  kms_key_id        = aws_kms_key.logs.arn
 }
 
 resource "aws_ecs_task_definition" "app" {
