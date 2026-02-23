@@ -4,7 +4,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - SECRET_KEY=local-dev-secret-key
+      - DEBUG=true
       - DATABASE_URL=sqlite:///./tasks.db
     volumes:
       - ./app:/app/app

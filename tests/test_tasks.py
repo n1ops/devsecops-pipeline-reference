@@ -62,3 +62,105 @@ def test_unauthorized_access(client):
 def test_task_not_found(client, auth_header):
     resp = client.get("/tasks/9999", headers=auth_header)
     assert resp.status_code == 404
+
+
+# --- IDOR Tests (Cross-User Isolation) ---
+
+def _create_user_and_get_header(client, username, password="SecurePass123!"):
+    """Helper to register, login, and return auth header for a user."""
+    client.post("/auth/register", json={"username": username, "password": password})
+    resp = client.post("/auth/login", json={"username": username, "password": password})
+    token = resp.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_idor_get_other_users_task(client):
+    header_a = _create_user_and_get_header(client, "user_a")
+    header_b = _create_user_and_get_header(client, "user_b")
+
+    # User A creates a task
+    resp = client.post("/tasks/", json={"title": "A's task"}, headers=header_a)
+    task_id = resp.json()["id"]
+
+    # User B tries to get User A's task
+    resp = client.get(f"/tasks/{task_id}", headers=header_b)
+    assert resp.status_code == 404
+
+
+def test_idor_update_other_users_task(client):
+    header_a = _create_user_and_get_header(client, "user_a2")
+    header_b = _create_user_and_get_header(client, "user_b2")
+
+    resp = client.post("/tasks/", json={"title": "A's task"}, headers=header_a)
+    task_id = resp.json()["id"]
+
+    resp = client.patch(
+        f"/tasks/{task_id}",
+        json={"title": "Hacked!"},
+        headers=header_b,
+    )
+    assert resp.status_code == 404
+
+
+def test_idor_delete_other_users_task(client):
+    header_a = _create_user_and_get_header(client, "user_a3")
+    header_b = _create_user_and_get_header(client, "user_b3")
+
+    resp = client.post("/tasks/", json={"title": "A's task"}, headers=header_a)
+    task_id = resp.json()["id"]
+
+    resp = client.delete(f"/tasks/{task_id}", headers=header_b)
+    assert resp.status_code == 404
+
+    # Verify task still exists for User A
+    resp = client.get(f"/tasks/{task_id}", headers=header_a)
+    assert resp.status_code == 200
+
+
+def test_idor_list_only_own_tasks(client):
+    header_a = _create_user_and_get_header(client, "user_a4")
+    header_b = _create_user_and_get_header(client, "user_b4")
+
+    client.post("/tasks/", json={"title": "A's task 1"}, headers=header_a)
+    client.post("/tasks/", json={"title": "A's task 2"}, headers=header_a)
+    client.post("/tasks/", json={"title": "B's task 1"}, headers=header_b)
+
+    resp = client.get("/tasks/", headers=header_a)
+    assert len(resp.json()) == 2
+    for task in resp.json():
+        assert "A's task" in task["title"]
+
+    resp = client.get("/tasks/", headers=header_b)
+    assert len(resp.json()) == 1
+    assert resp.json()[0]["title"] == "B's task 1"
+
+
+# --- Pagination Tests ---
+
+def test_pagination_default(client, auth_header):
+    for i in range(5):
+        client.post("/tasks/", json={"title": f"Task {i}"}, headers=auth_header)
+    resp = client.get("/tasks/", headers=auth_header)
+    assert resp.status_code == 200
+    assert len(resp.json()) == 5
+
+
+def test_pagination_limit(client, auth_header):
+    for i in range(10):
+        client.post("/tasks/", json={"title": f"Task {i}"}, headers=auth_header)
+    resp = client.get("/tasks/?limit=3", headers=auth_header)
+    assert resp.status_code == 200
+    assert len(resp.json()) == 3
+
+
+def test_pagination_skip(client, auth_header):
+    for i in range(5):
+        client.post("/tasks/", json={"title": f"Task {i}"}, headers=auth_header)
+    resp = client.get("/tasks/?skip=3", headers=auth_header)
+    assert resp.status_code == 200
+    assert len(resp.json()) == 2
+
+
+def test_pagination_limit_exceeds_max(client, auth_header):
+    resp = client.get("/tasks/?limit=200", headers=auth_header)
+    assert resp.status_code == 422  # limit max is 100

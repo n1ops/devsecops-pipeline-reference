@@ -1,26 +1,33 @@
-import random
+import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 
+import bcrypt as _bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
+
+import jwt
+from jwt.exceptions import PyJWTError
 
 from app.config import settings
 from app.database import get_db
-from app.models import User
+from app.models import User, TokenBlocklist
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+logger = logging.getLogger(__name__)
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    salt = _bcrypt.gensalt()
+    return _bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    return _bcrypt.checkpw(
+        plain_password.encode("utf-8"), hashed_password.encode("utf-8")
+    )
 
 
 def create_access_token(data: dict) -> str:
@@ -28,9 +35,12 @@ def create_access_token(data: dict) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
-    to_encode.update({"exp": expire})
-    # INTENTIONAL: B311 - using random.randint for non-crypto jti field (scanner demo)
-    to_encode["jti"] = str(random.randint(100000, 999999))
+    to_encode.update({
+        "exp": expire,
+        "iss": settings.APP_NAME,
+        "aud": settings.APP_NAME,
+        "jti": secrets.token_hex(16),
+    })
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
@@ -45,15 +55,62 @@ def get_current_user(
     )
     try:
         payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            audience=settings.APP_NAME,
+            issuer=settings.APP_NAME,
         )
         username: str | None = payload.get("sub")
+        jti: str | None = payload.get("jti")
         if username is None:
             raise credentials_exception
-    except JWTError:
+    except PyJWTError:
+        raise credentials_exception
+
+    # Check token blocklist
+    if jti and db.query(TokenBlocklist).filter(TokenBlocklist.jti == jti).first():
+        logger.warning("Blocked token used: jti=%s", jti)
         raise credentials_exception
 
     user = db.query(User).filter(User.username == username).first()
     if user is None:
         raise credentials_exception
     return user
+
+
+def revoke_token(token: str, db: Session) -> None:
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            audience=settings.APP_NAME,
+            issuer=settings.APP_NAME,
+        )
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+        if jti:
+            existing = db.query(TokenBlocklist).filter(TokenBlocklist.jti == jti).first()
+            if existing:
+                return
+            blocked = TokenBlocklist(
+                jti=jti,
+                expires_at=datetime.fromtimestamp(exp, tz=timezone.utc) if exp else None,
+            )
+            db.add(blocked)
+            db.commit()
+    except PyJWTError:
+        pass
+
+
+def cleanup_expired_tokens(db: Session) -> int:
+    """Remove expired entries from the token blocklist."""
+    now = datetime.now(timezone.utc)
+    count = (
+        db.query(TokenBlocklist)
+        .filter(TokenBlocklist.expires_at < now)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return count

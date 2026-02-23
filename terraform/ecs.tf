@@ -58,6 +58,14 @@ resource "aws_ecs_task_definition" "app" {
         }
       ]
 
+      readonlyRootFilesystem = true
+
+      linuxParameters = {
+        capabilities = {
+          drop = ["ALL"]
+        }
+      }
+
       healthCheck = {
         command     = ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
         interval    = 30
