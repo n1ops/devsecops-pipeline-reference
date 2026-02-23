@@ -71,3 +71,29 @@ def auth_token(client):
         json={"username": "tokenuser", "password": VALID_PASSWORD},
     )
     return resp.json()["access_token"]
+
+
+@pytest.fixture()
+def client_with_rate_limit():
+    """Client fixture with rate limiting enabled."""
+    Base.metadata.create_all(bind=engine)
+
+    def _override():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = _override
+    limiter.enabled = True
+    # Clear any existing rate limit state
+    try:
+        limiter._limiter.reset()
+    except Exception:
+        pass
+    with TestClient(app) as c:
+        yield c
+    limiter.enabled = False
+    app.dependency_overrides.clear()
+    Base.metadata.drop_all(bind=engine)

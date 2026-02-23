@@ -12,6 +12,7 @@ class User(Base):
     hashed_password = Column(String(128), nullable=False)
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
+    password_changed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     tasks = relationship("Task", back_populates="owner")

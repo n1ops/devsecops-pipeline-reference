@@ -208,3 +208,116 @@ def test_change_password_revokes_token(client):
         json={"username": "pwchange_revoke", "password": "NewSecure456!"},
     )
     assert resp.status_code == 200
+
+
+def test_expired_token_rejected(client):
+    """Expired JWT should be rejected with 401."""
+    import jwt as _jwt
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "sub": "expireduser",
+        "exp": datetime.now(timezone.utc) - timedelta(minutes=1),
+        "iat": datetime.now(timezone.utc) - timedelta(minutes=31),
+        "iss": "DevSecOps Task API",
+        "aud": "DevSecOps Task API",
+        "jti": "test-expired-jti",
+    }
+    token = _jwt.encode(payload, "test-secret-key-for-testing-only-not-production", algorithm="HS256")
+    resp = client.get("/tasks/", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+
+
+def test_token_wrong_secret_rejected(client):
+    """JWT signed with a different secret should be rejected."""
+    import jwt as _jwt
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "sub": "testuser",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+        "iat": datetime.now(timezone.utc),
+        "iss": "DevSecOps Task API",
+        "aud": "DevSecOps Task API",
+        "jti": "test-wrong-secret-jti",
+    }
+    token = _jwt.encode(payload, "wrong-secret-key", algorithm="HS256")
+    resp = client.get("/tasks/", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+
+
+def test_token_wrong_audience_rejected(client):
+    """JWT with wrong audience claim should be rejected."""
+    import jwt as _jwt
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "sub": "testuser",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+        "iat": datetime.now(timezone.utc),
+        "iss": "DevSecOps Task API",
+        "aud": "Wrong Audience",
+        "jti": "test-wrong-aud-jti",
+    }
+    token = _jwt.encode(payload, "test-secret-key-for-testing-only-not-production", algorithm="HS256")
+    resp = client.get("/tasks/", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+
+
+def test_token_wrong_issuer_rejected(client):
+    """JWT with wrong issuer claim should be rejected."""
+    import jwt as _jwt
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "sub": "testuser",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+        "iat": datetime.now(timezone.utc),
+        "iss": "Wrong Issuer",
+        "aud": "DevSecOps Task API",
+        "jti": "test-wrong-iss-jti",
+    }
+    token = _jwt.encode(payload, "test-secret-key-for-testing-only-not-production", algorithm="HS256")
+    resp = client.get("/tasks/", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+
+
+def test_token_missing_sub_claim_rejected(client):
+    """JWT without 'sub' claim should be rejected."""
+    import jwt as _jwt
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+        "iat": datetime.now(timezone.utc),
+        "iss": "DevSecOps Task API",
+        "aud": "DevSecOps Task API",
+        "jti": "test-no-sub-jti",
+    }
+    token = _jwt.encode(payload, "test-secret-key-for-testing-only-not-production", algorithm="HS256")
+    resp = client.get("/tasks/", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+
+
+def test_token_none_algorithm_rejected(client):
+    """JWT with 'none' algorithm should be rejected."""
+    import jwt as _jwt
+    from datetime import datetime, timedelta, timezone
+
+    payload = {
+        "sub": "testuser",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+        "iat": datetime.now(timezone.utc),
+        "iss": "DevSecOps Task API",
+        "aud": "DevSecOps Task API",
+        "jti": "test-none-alg-jti",
+    }
+    # PyJWT won't encode with algorithm="none" without explicitly allowing it
+    # So we manually construct an unsigned token
+    import base64
+    import json
+    header = base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode()).rstrip(b"=").decode()
+    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload, default=str).encode()).rstrip(b"=").decode()
+    token = f"{header}.{payload_b64}."
+    resp = client.get("/tasks/", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401

@@ -127,6 +127,7 @@ def change_password(
             detail="Current password is incorrect",
         )
     current_user.hashed_password = hash_password(passwords.new_password)
+    current_user.password_changed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     revoke_token(token, db)
     db.commit()
     logger.info("Password changed for user: %s", current_user.username)

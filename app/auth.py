@@ -35,8 +35,10 @@ def create_access_token(data: dict) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
+    now = datetime.now(timezone.utc)
     to_encode.update({
         "exp": expire,
+        "iat": now,
         "iss": settings.APP_NAME,
         "aud": settings.APP_NAME,
         "jti": secrets.token_hex(16),
@@ -76,6 +78,22 @@ def get_current_user(
     user = db.query(User).filter(User.username == username).first()
     if user is None:
         raise credentials_exception
+
+    # Reject tokens for locked accounts
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    if user.locked_until and user.locked_until > now_utc:
+        logger.warning("Token used for locked account: %s", username)
+        raise credentials_exception
+
+    # Reject tokens issued before last password change
+    if user.password_changed_at:
+        iat = payload.get("iat")
+        if iat:
+            token_issued = datetime.fromtimestamp(iat, tz=timezone.utc).replace(tzinfo=None)
+            if token_issued < user.password_changed_at:
+                logger.warning("Token issued before password change rejected: user=%s", username)
+                raise credentials_exception
+
     return user
 
 
