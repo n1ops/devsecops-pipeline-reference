@@ -2,7 +2,35 @@
 
 [![Security Pipeline](https://github.com/n1ops/devsecops-pipeline-reference/actions/workflows/security-pipeline.yml/badge.svg)](https://github.com/n1ops/devsecops-pipeline-reference/actions/workflows/security-pipeline.yml)
 
-A production-grade **11-stage DevSecOps security pipeline** with a fully hardened FastAPI application deployed on AWS ECS Fargate. This project demonstrates end-to-end security automation — from code commit through production deployment — with **73 security tests**, **8 scanning tools**, and a **100/100 internal security posture score**.
+## Overview
+
+In most software teams, security is an afterthought — developers write code, ship it, and hope nothing goes wrong. **DevSecOps** flips that model by embedding security checks directly into the development workflow so that vulnerabilities are caught automatically, every single time code changes, before it ever reaches users.
+
+This project is a complete, working example of that approach. It pairs a real Python web API (a task management service built with FastAPI) with an **automated security pipeline** that runs **11 stages of checks** every time code is pushed or a pull request is opened. The pipeline scans for leaked secrets, known vulnerabilities in dependencies, insecure code patterns, cloud infrastructure misconfigurations, and more — then makes a pass/fail decision before anything is allowed to deploy.
+
+### What the pipeline checks (and why)
+
+| What gets checked | Why it matters | Tool |
+|---|---|---|
+| **Secrets in code** | API keys or passwords accidentally committed to git can be exploited within minutes | Gitleaks |
+| **Insecure code patterns** | Common mistakes like hardcoded passwords or shell injection are caught before review | Bandit, CodeQL |
+| **Vulnerable dependencies** | Open-source libraries ship with known CVEs that attackers actively scan for | pip-audit |
+| **Cloud misconfigurations** | A single overly-permissive IAM policy or unencrypted database can expose an entire system | Checkov |
+| **Application tests** | 73 tests verify authentication, authorization, rate limiting, input validation, and data isolation | pytest |
+| **Container vulnerabilities** | The Docker image's OS packages and libraries are scanned for known CVEs | Trivy |
+| **Software bill of materials** | A full inventory of every component in the container, required for supply chain compliance | Syft |
+| **Live application scanning** | A real attack proxy crawls and probes the running API for XSS, injection, and missing headers | OWASP ZAP |
+
+If any critical check fails — leaked secrets, failing tests, vulnerable dependencies, or container CVEs — the pipeline blocks deployment automatically. Non-critical findings (like informational IaC warnings) are tracked but don't stop the release.
+
+When everything passes, the pipeline deploys to **AWS ECS Fargate** using keyless OIDC authentication (no stored AWS credentials in GitHub). The infrastructure — VPC, load balancer, WAF, encrypted logging, secrets management — is fully defined in **Terraform** and follows AWS security best practices.
+
+### Who this is for
+
+- **Engineers** looking for a reference implementation of a real DevSecOps pipeline
+- **Security teams** evaluating which tools to integrate into CI/CD
+- **Students and career-changers** learning how modern application security works in practice
+- **Hiring managers** reviewing a portfolio project that demonstrates security engineering depth
 
 > **The pipeline is the star** — the application exists to give every scanner something real to analyze, but is itself hardened to production standards.
 
@@ -10,6 +38,7 @@ A production-grade **11-stage DevSecOps security pipeline** with a fully hardene
 
 ## Table of Contents
 
+- [Overview](#overview)
 - [Pipeline Architecture](#pipeline-architecture)
 - [Security Pipeline Deep Dive](#security-pipeline-deep-dive)
 - [Application Security](#application-security)
