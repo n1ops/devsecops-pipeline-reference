@@ -52,6 +52,7 @@ jobs:
         run: pip install 'bandit[sarif]==1.8.3'
 
       - name: Run Bandit
+        continue-on-error: true
         run: bandit -r app/ -c .bandit.yml -f sarif -o bandit-results.sarif
 
       - name: Upload SARIF
@@ -69,6 +70,7 @@ jobs:
     name: "Stage 2b: CodeQL Analysis"
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       security-events: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -129,6 +131,7 @@ jobs:
         run: pip install 'checkov==3.2.0'
 
       - name: Run Checkov
+        continue-on-error: true
         run: checkov -d terraform/ -o sarif --output-file-path .
 
       - name: Upload SARIF

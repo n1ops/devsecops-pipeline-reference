@@ -1,5 +1,5 @@
 # Core
-fastapi==0.115.6
+fastapi==0.131.0
 uvicorn==0.34.0
 pydantic==2.10.0
 pydantic-settings==2.13.1
@@ -9,7 +9,7 @@ sqlalchemy==2.0.36
 
 # Auth
 PyJWT==2.10.1
-python-multipart==0.0.20
+python-multipart==0.0.22
 bcrypt==4.2.1
 
 # ASGI
