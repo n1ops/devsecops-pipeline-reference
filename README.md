@@ -684,6 +684,42 @@ The security gate (Stages 1-9) and the deploy (Stage 10) are separate. If the de
 
 The same pipeline runs. Checkov (Stage 4) will scan your infrastructure changes. The application stages (tests, container scan, DAST) still run to confirm nothing is broken. The deploy stage will push the same application image — Terraform changes need to be applied separately with `terraform apply`.
 
+### Can I use this pipeline in a different project?
+
+**Not by copying it directly** — but that's by design. This pipeline is a **reference architecture**, not a drop-in plugin. It's wired to this specific project's language (Python), directory structure (`app/`, `terraform/`, `tests/`), framework (FastAPI), and deployment target (ECS Fargate).
+
+What you'd do is use this as a **template**: keep the same stage structure and swap out the tool-specific commands to match your stack. The 11-stage pattern works for any project — only the tools inside each stage change.
+
+Here's what that looks like for common stacks:
+
+| Stage | This Project (Python/FastAPI) | Node.js/Express | Go | Java/Spring Boot |
+|---|---|---|---|---|
+| **Secret Detection** | Gitleaks | Gitleaks | Gitleaks | Gitleaks |
+| **SAST** | Bandit, CodeQL | ESLint security plugin, CodeQL | gosec, CodeQL | SpotBugs, CodeQL |
+| **SCA** | pip-audit | `npm audit` | govulncheck | OWASP Dependency-Check |
+| **IaC Scan** | Checkov | Checkov | Checkov | Checkov |
+| **Unit Tests** | pytest | Jest / Mocha | `go test` | JUnit / Maven Surefire |
+| **Container Scan** | Trivy | Trivy | Trivy | Trivy |
+| **SBOM** | Syft | Syft | Syft | Syft |
+| **DAST** | OWASP ZAP | OWASP ZAP | OWASP ZAP | OWASP ZAP |
+| **Security Gate** | Custom logic | Custom logic | Custom logic | Custom logic |
+| **Deploy** | ECS Fargate | ECS / Vercel / etc. | ECS / GKE / etc. | ECS / EKS / etc. |
+
+Notice that some tools are **language-agnostic** (Gitleaks, Checkov, Trivy, Syft, ZAP) and work with zero changes. Others are language-specific and need to be swapped.
+
+**To adapt this pipeline to your project, you would:**
+
+1. **Copy** `.github/workflows/security-pipeline.yml` into your repo
+2. **Keep** Stages 1, 4, 6, 7, 8, 9 mostly as-is (language-agnostic tools)
+3. **Replace** Stage 2 (SAST) with a scanner for your language
+4. **Replace** Stage 3 (SCA) with your language's dependency auditor
+5. **Replace** Stage 5 (tests) with your test runner command
+6. **Update** Stage 8 (DAST) to start your app instead of `uvicorn app.main:app`
+7. **Update** Stage 10 (Deploy) with your deployment target and image name
+8. **Update** the `env` block at the top with your image/cluster/service names
+
+The security gate logic (Stage 9) works regardless of language — it only checks whether upstream stages passed or failed.
+
 ---
 
 ## API Reference
