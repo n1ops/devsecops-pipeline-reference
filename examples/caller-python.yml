@@ -1,0 +1,31 @@
+# Drop this file into your Python project at .github/workflows/security.yml
+# Then customize the inputs below for your project.
+
+name: Security Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+
+jobs:
+  security:
+    uses: n1ops/devsecops-pipeline-reference/.github/workflows/reusable-pipeline.yml@main
+    with:
+      language: python
+      runtime-version: "3.11"
+      install-command: "pip install -r requirements-dev.txt"
+      test-command: "pytest tests/ -v --tb=short"
+      sast-command: "pip install 'bandit[sarif]' && bandit -r app/ -f sarif -o bandit-results.sarif"
+      sca-command: "pip install pip-audit && pip-audit -r requirements.txt"
+      terraform-directory: "terraform/"
+      image-name: "my-python-app"
+      app-start-command: "SECRET_KEY=test-secret DEBUG=true uvicorn app.main:app --host 0.0.0.0 --port 8000 &"
+      app-port: "8000"
+    secrets: inherit

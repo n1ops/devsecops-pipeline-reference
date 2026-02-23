@@ -1,0 +1,30 @@
+# Drop this file into your Node.js project at .github/workflows/security.yml
+# Then customize the inputs below for your project.
+
+name: Security Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+
+jobs:
+  security:
+    uses: n1ops/devsecops-pipeline-reference/.github/workflows/reusable-pipeline.yml@main
+    with:
+      language: javascript
+      runtime-version: "20"
+      install-command: "npm ci"
+      test-command: "npm test"
+      sast-command: "npx eslint --ext .js,.ts src/"
+      sca-command: "npm audit --audit-level=high"
+      image-name: "my-node-app"
+      app-start-command: "npm start &"
+      app-port: "3000"
+    secrets: inherit
