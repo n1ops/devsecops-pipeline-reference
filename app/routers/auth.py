@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
@@ -40,9 +41,11 @@ _DUMMY_HASH = "$2b$12$LJ3m4ys3Lg2HEOiLcoMxsez0FXOH0idstXJiGfOBfWxJCFb.FhIm6"
 def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == user_in.username).first()
     if existing:
+        # Perform dummy hash to equalize timing with successful registration
+        hash_password("dummy-password-for-timing")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Username already registered",
+            detail="Registration failed",
         )
     user = User(
         username=user_in.username,
@@ -79,12 +82,17 @@ def login(request: Request, user_in: UserLogin, db: Session = Depends(get_db)):
         )
 
     if not verify_password(user_in.password, user.hashed_password):
-        user.failed_login_attempts += 1
-        if user.failed_login_attempts >= MAX_FAILED_ATTEMPTS:
-            user.locked_until = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=LOCKOUT_MINUTES)
-            logger.warning("Account locked after %d failed attempts: %s", user.failed_login_attempts, user.username)
+        # Atomic increment to avoid race condition
+        new_count = user.failed_login_attempts + 1
+        update_values = {"failed_login_attempts": User.failed_login_attempts + 1}
+        if new_count >= MAX_FAILED_ATTEMPTS:
+            update_values["locked_until"] = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=LOCKOUT_MINUTES)
+            logger.warning("Account locked after %d failed attempts: %s", new_count, user.username)
+        db.execute(
+            update(User).where(User.id == user.id).values(**update_values)
+        )
         db.commit()
-        logger.warning("Failed login for user: %s (attempt %d)", user.username, user.failed_login_attempts)
+        logger.warning("Failed login for user: %s (attempt %d)", user.username, new_count)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
@@ -125,6 +133,11 @@ def change_password(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Current password is incorrect",
+        )
+    if verify_password(passwords.new_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from current password",
         )
     current_user.hashed_password = hash_password(passwords.new_password)
     current_user.password_changed_at = datetime.now(timezone.utc).replace(tzinfo=None)

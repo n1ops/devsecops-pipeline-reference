@@ -118,8 +118,8 @@ def revoke_token(token: str, db: Session) -> None:
             )
             db.add(blocked)
             db.commit()
-    except PyJWTError:
-        pass
+    except PyJWTError as e:
+        logger.warning("Token revocation failed — invalid token: %s", str(e))
 
 
 def cleanup_expired_tokens(db: Session) -> int:

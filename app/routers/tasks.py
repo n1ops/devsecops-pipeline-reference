@@ -2,10 +2,12 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Task, User
+from app.rate_limit import limiter
 from app.schemas import TaskCreate, TaskResponse, TaskUpdate
 
 logger = logging.getLogger(__name__)
@@ -14,7 +16,9 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 @router.get("/", response_model=list[TaskResponse])
+@limiter.limit("30/minute")
 def list_tasks(
+    request: Request,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -30,7 +34,9 @@ def list_tasks(
 
 
 @router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 def create_task(
+    request: Request,
     task_in: TaskCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -44,7 +50,9 @@ def create_task(
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
+@limiter.limit("30/minute")
 def get_task(
+    request: Request,
     task_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -58,7 +66,9 @@ def get_task(
 
 
 @router.patch("/{task_id}", response_model=TaskResponse)
+@limiter.limit("20/minute")
 def update_task(
+    request: Request,
     task_id: int,
     task_in: TaskUpdate,
     db: Session = Depends(get_db),
@@ -83,7 +93,9 @@ def update_task(
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
 def delete_task(
+    request: Request,
     task_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

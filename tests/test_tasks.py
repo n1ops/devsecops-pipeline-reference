@@ -164,3 +164,69 @@ def test_pagination_skip(client, auth_header):
 def test_pagination_limit_exceeds_max(client, auth_header):
     resp = client.get("/tasks/?limit=200", headers=auth_header)
     assert resp.status_code == 422  # limit max is 100
+
+
+# --- Mass Assignment & SQL Injection Security Tests ---
+
+def test_mass_assignment_owner_id_ignored(client):
+    """PATCH with owner_id should be ignored (mass assignment protection)."""
+    header_a = _create_user_and_get_header(client, "mass_a")
+    header_b = _create_user_and_get_header(client, "mass_b")
+
+    # Create a task as user A
+    resp = client.post("/tasks/", json={"title": "My Task"}, headers=header_a)
+    task_id = resp.json()["id"]
+    original_owner = resp.json()["owner_id"]
+
+    # Try to PATCH with owner_id (should be ignored by mass assignment protection)
+    resp = client.patch(
+        f"/tasks/{task_id}",
+        json={"title": "Updated", "owner_id": original_owner + 999},
+        headers=header_a,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["owner_id"] == original_owner
+    assert resp.json()["title"] == "Updated"
+
+
+def test_sql_injection_in_task_title(client, auth_header):
+    """SQL injection attempt in task title should be stored as plain text, not executed."""
+    payload = "'; DROP TABLE tasks; --"
+    resp = client.post(
+        "/tasks/",
+        json={"title": payload, "description": "test"},
+        headers=auth_header,
+    )
+    assert resp.status_code == 201
+    task_id = resp.json()["id"]
+
+    # Verify the task was stored safely
+    resp = client.get(f"/tasks/{task_id}", headers=auth_header)
+    assert resp.status_code == 200
+    assert resp.json()["title"] == payload
+
+    # Verify tasks table still works
+    resp = client.get("/tasks/", headers=auth_header)
+    assert resp.status_code == 200
+
+
+# --- Malformed Input Tests ---
+
+def test_create_task_empty_title(client, auth_header):
+    """Empty task title should be rejected."""
+    resp = client.post(
+        "/tasks/",
+        json={"title": "", "description": "test"},
+        headers=auth_header,
+    )
+    assert resp.status_code == 422
+
+
+def test_create_task_oversized_title(client, auth_header):
+    """Task title exceeding max length should be rejected."""
+    resp = client.post(
+        "/tasks/",
+        json={"title": "x" * 300, "description": "test"},
+        headers=auth_header,
+    )
+    assert resp.status_code == 422

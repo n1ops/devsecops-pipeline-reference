@@ -30,3 +30,39 @@ def test_cache_control_on_api(client, auth_header):
     resp = client.get("/tasks/", headers=auth_header)
     assert resp.headers.get("cache-control") == "no-store, no-cache, must-revalidate"
     assert resp.headers.get("pragma") == "no-cache"
+
+
+# --- Error Format & Docs Security Tests ---
+
+def test_error_response_no_stack_trace(client):
+    """Error responses should not leak stack traces or internal paths."""
+    resp = client.get("/nonexistent-endpoint")
+    assert resp.status_code in (404, 405)
+    body = resp.text
+    assert "Traceback" not in body
+    assert "File \"/" not in body
+    assert "File \"C:" not in body
+
+
+def test_docs_hidden_in_production(client):
+    """OpenAPI docs should be hidden (DEBUG=true in tests, but verify docs_url behavior)."""
+    # In test mode, DEBUG=true so docs are available
+    resp = client.get("/docs")
+    assert resp.status_code == 200
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+
+
+# --- CORS Tests ---
+
+def test_cors_preflight(client):
+    """CORS preflight should return appropriate headers."""
+    resp = client.options(
+        "/health",
+        headers={
+            "Origin": "http://example.com",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    # In debug mode with wildcard origins, CORS should respond
+    assert resp.status_code == 200

@@ -3,6 +3,7 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -24,6 +25,16 @@ app = FastAPI(
     redoc_url="/redoc" if settings.DEBUG else None,
     openapi_url="/openapi.json" if settings.DEBUG else None,
 )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    """Catch unhandled exceptions and return safe JSON without stack traces."""
+    logger.error("Unhandled exception: %s", str(exc), exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 
 # --- Pure ASGI Security Headers Middleware ---
@@ -88,6 +99,32 @@ class RequestIDMiddleware:
         await self.app(scope, receive, send_with_request_id)
 
 
+# --- Pure ASGI Request Body Size Limit Middleware ---
+class MaxBodySizeMiddleware:
+    """Reject requests with Content-Length exceeding the limit."""
+    MAX_BODY_BYTES = 1_048_576  # 1 MB
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", []))
+        content_length = headers.get(b"content-length")
+        if content_length and int(content_length) > self.MAX_BODY_BYTES:
+            response = JSONResponse(
+                status_code=413,
+                content={"detail": "Request body too large"},
+            )
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
 # --- Rate Limiting ---
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -103,14 +140,16 @@ app.add_middleware(SlowAPIMiddleware)
 # CORS: use explicit origins in production, wildcard only in debug mode
 _origins = settings.get_allowed_origins()
 if _origins:
+    _allow_credentials = "*" not in _origins
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_origins,
-        allow_credentials=True,
+        allow_credentials=_allow_credentials,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
 
+app.add_middleware(MaxBodySizeMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
