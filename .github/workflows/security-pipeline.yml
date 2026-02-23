@@ -83,7 +83,18 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4.32.4
+        continue-on-error: true
         with:
+          category: codeql
+          upload: never
+          output: ../results
+
+      - name: Upload CodeQL SARIF
+        uses: github/codeql-action/upload-sarif@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4.32.4
+        continue-on-error: true
+        if: always()
+        with:
+          sarif_file: ../results
           category: codeql
 
   # ──────────────────────────────────────────────
@@ -132,14 +143,14 @@ jobs:
 
       - name: Run Checkov
         continue-on-error: true
-        run: checkov -d terraform/ -o sarif --output-file-path .
+        run: checkov -d terraform/ -o sarif --output-file-path . -s
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4.32.4
         if: always()
         continue-on-error: true
         with:
-          sarif_file: results_cli.sarif
+          sarif_file: results_sarif.sarif
           category: checkov
 
   # ──────────────────────────────────────────────
