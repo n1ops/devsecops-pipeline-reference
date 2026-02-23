@@ -9,7 +9,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "devsecops-pipeline-tfstate"
+    bucket = "devsecops-pipeline-tfstate-132141656493"
     key    = "prod/terraform.tfstate"
     region = "us-east-1"
   }

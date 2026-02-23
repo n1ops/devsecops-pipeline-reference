@@ -49,5 +49,5 @@ variable "vpc_cidr" {
 variable "github_repo" {
   description = "GitHub repository (owner/name) allowed to assume the deploy role via OIDC"
   type        = string
-  default     = "YOUR_USERNAME/devsecops-pipeline-reference"
+  default     = "n1ops/devsecops-pipeline-reference"
 }
