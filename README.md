@@ -8,6 +8,8 @@ In most software teams, security is an afterthought — developers write code, s
 
 This project is a complete, working example of that approach. It pairs a real Python web API (a task management service built with FastAPI) with an **automated security pipeline** that runs **11 stages of checks** every time code is pushed or a pull request is opened. The pipeline scans for leaked secrets, known vulnerabilities in dependencies, insecure code patterns, cloud infrastructure misconfigurations, and more — then makes a pass/fail decision before anything is allowed to deploy.
 
+**It's also a reusable pipeline.** Any repository can call this pipeline by adding a single ~20-line workflow file. The full pipeline logic lives here — other repos just pass in their project-specific settings (language, test command, image name, etc.) and get the same 11-stage security pipeline without duplicating a single line of configuration.
+
 ### What the pipeline checks (and why)
 
 | What gets checked | Why it matters | Tool |
@@ -48,6 +50,7 @@ When everything passes, the pipeline deploys to **AWS ECS Fargate** using keyles
 - [Quick Start](#quick-start)
 - [Deployment](#deployment)
 - [How to Use This Pipeline](#how-to-use-this-pipeline)
+- [Reusable Pipeline](#reusable-pipeline)
 - [API Reference](#api-reference)
 - [Project Structure](#project-structure)
 - [License](#license)
@@ -540,7 +543,7 @@ Stage 10 deploys to ECS Fargate on push to `main` after the security gate passes
 
 ```bash
 cd terraform
-terraform init
+terraform init -backend-config=backend.tfvars
 terraform apply
 ```
 
@@ -686,39 +689,138 @@ The same pipeline runs. Checkov (Stage 4) will scan your infrastructure changes.
 
 ### Can I use this pipeline in a different project?
 
-**Not by copying it directly** — but that's by design. This pipeline is a **reference architecture**, not a drop-in plugin. It's wired to this specific project's language (Python), directory structure (`app/`, `terraform/`, `tests/`), framework (FastAPI), and deployment target (ECS Fargate).
+**Yes.** This repo includes a [reusable pipeline](#reusable-pipeline) that any GitHub repository can call with a ~20-line workflow file. You don't copy the pipeline — you point to it. See the [Reusable Pipeline](#reusable-pipeline) section for setup instructions.
 
-What you'd do is use this as a **template**: keep the same stage structure and swap out the tool-specific commands to match your stack. The 11-stage pattern works for any project — only the tools inside each stage change.
+---
 
-Here's what that looks like for common stacks:
+## Reusable Pipeline
 
-| Stage | This Project (Python/FastAPI) | Node.js/Express | Go | Java/Spring Boot |
-|---|---|---|---|---|
-| **Secret Detection** | Gitleaks | Gitleaks | Gitleaks | Gitleaks |
-| **SAST** | Bandit, CodeQL | ESLint security plugin, CodeQL | gosec, CodeQL | SpotBugs, CodeQL |
-| **SCA** | pip-audit | `npm audit` | govulncheck | OWASP Dependency-Check |
-| **IaC Scan** | Checkov | Checkov | Checkov | Checkov |
-| **Unit Tests** | pytest | Jest / Mocha | `go test` | JUnit / Maven Surefire |
-| **Container Scan** | Trivy | Trivy | Trivy | Trivy |
-| **SBOM** | Syft | Syft | Syft | Syft |
-| **DAST** | OWASP ZAP | OWASP ZAP | OWASP ZAP | OWASP ZAP |
-| **Security Gate** | Custom logic | Custom logic | Custom logic | Custom logic |
-| **Deploy** | ECS Fargate | ECS / Vercel / etc. | ECS / GKE / etc. | ECS / EKS / etc. |
+This repo contains a **parameterized version** of the security pipeline (`reusable-pipeline.yml`) that any GitHub repository can call using GitHub's [reusable workflows](https://docs.github.com/en/actions/using-workflows/reusing-workflows) feature. The full pipeline logic lives here — calling repos just pass in their project-specific settings.
 
-Notice that some tools are **language-agnostic** (Gitleaks, Checkov, Trivy, Syft, ZAP) and work with zero changes. Others are language-specific and need to be swapped.
+```
+n1ops/devsecops-pipeline-reference          <-- Central pipeline (source of truth)
+    └── .github/workflows/
+        ├── security-pipeline.yml           <-- Runs on THIS repo (unchanged)
+        └── reusable-pipeline.yml           <-- Called by OTHER repos
 
-**To adapt this pipeline to your project, you would:**
+n1ops/any-other-project                     <-- Any project
+    └── .github/workflows/
+        └── security.yml                    <-- ~20-line caller file
+```
 
-1. **Copy** `.github/workflows/security-pipeline.yml` into your repo
-2. **Keep** Stages 1, 4, 6, 7, 8, 9 mostly as-is (language-agnostic tools)
-3. **Replace** Stage 2 (SAST) with a scanner for your language
-4. **Replace** Stage 3 (SCA) with your language's dependency auditor
-5. **Replace** Stage 5 (tests) with your test runner command
-6. **Update** Stage 8 (DAST) to start your app instead of `uvicorn app.main:app`
-7. **Update** Stage 10 (Deploy) with your deployment target and image name
-8. **Update** the `env` block at the top with your image/cluster/service names
+### Quick setup
 
-The security gate logic (Stage 9) works regardless of language — it only checks whether upstream stages passed or failed.
+Add this file to your project at `.github/workflows/security.yml`:
+
+```yaml
+name: Security Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  id-token: write
+
+jobs:
+  security:
+    uses: n1ops/devsecops-pipeline-reference/.github/workflows/reusable-pipeline.yml@main
+    with:
+      language: javascript          # python, javascript, go, java
+      runtime-version: "20"         # language runtime version
+      install-command: "npm ci"     # install project dependencies
+      test-command: "npm test"      # run your test suite
+      sca-command: "npm audit --audit-level=high"
+    secrets: inherit
+```
+
+That's it. Push code, and the full security pipeline runs.
+
+### Inputs
+
+The reusable pipeline accepts 10 inputs. Only `language` is required — everything else has defaults or skips the stage when left empty.
+
+| Input | Required | Default | Effect when empty |
+|---|---|---|---|
+| `language` | **yes** | — | Sets CodeQL language and runtime setup |
+| `runtime-version` | no | `3.11` | Language runtime version |
+| `install-command` | no | `pip install -r requirements-dev.txt` | Installs project dependencies |
+| `test-command` | no | `pytest tests/ -v --tb=short` | Runs the test suite |
+| `sast-command` | no | *(empty)* | Skips SAST stage |
+| `sca-command` | no | *(empty)* | Skips SCA stage |
+| `terraform-directory` | no | *(empty)* | Skips IaC scanning |
+| `image-name` | no | *(empty)* | Skips container build/scan/SBOM/deploy |
+| `app-start-command` | no | *(empty)* | Skips DAST |
+| `app-port` | no | `8000` | Port for DAST target |
+
+Stages with empty inputs are **skipped entirely**, not errored. The security gate treats skipped stages as passing.
+
+### What runs per language
+
+| Stage | Language-agnostic | Language-specific |
+|---|---|---|
+| **Secret Detection** (Gitleaks) | Always runs | — |
+| **CodeQL** | — | Uses `language` input |
+| **SAST** | — | Runs `sast-command` (Bandit, ESLint, gosec, etc.) |
+| **SCA** | — | Runs `sca-command` (pip-audit, npm audit, etc.) |
+| **IaC Scan** (Checkov) | Runs if `terraform-directory` set | — |
+| **Unit Tests** | — | Runs `install-command` then `test-command` |
+| **Container Scan** (Trivy) | Runs if `image-name` set | — |
+| **SBOM** (Syft) | Runs if `image-name` set | — |
+| **DAST** (ZAP) | — | Runs `app-start-command` then ZAP |
+| **Security Gate** | Always runs | — |
+| **Deploy** (ECS) | Runs if `image-name` set + push to main + gate passes | — |
+
+### Example: Python project (full pipeline)
+
+```yaml
+jobs:
+  security:
+    uses: n1ops/devsecops-pipeline-reference/.github/workflows/reusable-pipeline.yml@main
+    with:
+      language: python
+      runtime-version: "3.11"
+      install-command: "pip install -r requirements-dev.txt"
+      test-command: "pytest tests/ -v --tb=short"
+      sast-command: "pip install 'bandit[sarif]' && bandit -r app/ -f sarif -o bandit-results.sarif"
+      sca-command: "pip install pip-audit && pip-audit -r requirements.txt"
+      terraform-directory: "terraform/"
+      image-name: "my-python-app"
+      app-start-command: "SECRET_KEY=test DEBUG=true uvicorn app.main:app --host 0.0.0.0 --port 8000 &"
+      app-port: "8000"
+    secrets: inherit
+```
+
+### Example: Node.js project (no Docker, no Terraform)
+
+```yaml
+jobs:
+  security:
+    uses: n1ops/devsecops-pipeline-reference/.github/workflows/reusable-pipeline.yml@main
+    with:
+      language: javascript
+      runtime-version: "20"
+      install-command: "npm ci"
+      test-command: "npm test"
+      sca-command: "npm audit --audit-level=high"
+    secrets: inherit
+```
+
+Only secret detection, CodeQL, SCA, tests, and the security gate run. Everything else skips automatically.
+
+### Deploy convention
+
+When `image-name` is provided, the deploy stage derives ECS resource names using the convention:
+
+- Cluster: `{image-name}-cluster`
+- Service: `{image-name}-service`
+
+Deploy runs only on push to `main`, after the security gate passes, and requires the `AWS_ROLE_ARN` secret to be configured in the calling repo.
 
 ---
 
@@ -750,7 +852,8 @@ devsecops-pipeline-reference/
 │   ├── CODEOWNERS                    # Security-critical path ownership
 │   ├── dependabot.yml                # Automated dependency updates
 │   └── workflows/
-│       └── security-pipeline.yml     # 11-stage CI/CD security pipeline
+│       ├── security-pipeline.yml     # 11-stage CI/CD security pipeline (this repo)
+│       └── reusable-pipeline.yml     # Parameterized pipeline called by other repos
 ├── app/
 │   ├── routers/
 │   │   ├── auth.py                   # Auth endpoints (register/login/logout/refresh/change-password)
@@ -780,12 +883,14 @@ devsecops-pipeline-reference/
 │   ├── test_health.py                # 11 middleware, headers & error handling tests
 │   ├── test_rate_limit.py            # 9 rate limiting tests
 │   └── test_tasks.py                 # 19 CRUD, IDOR, pagination & input validation tests
+├── examples/
+│   ├── caller-python.yml             # Example caller for Python projects
+│   └── caller-node.yml               # Example caller for Node.js projects
 ├── Dockerfile                        # Multi-stage, non-root, read-only, healthcheck
 ├── docker-compose.yml                # Local development
 ├── requirements.txt                  # Production dependencies
 ├── requirements-dev.txt              # Dev/test dependencies
 ├── pyproject.toml                    # Project metadata
-├── SECURITY.md                       # STRIDE threat model
 ├── .bandit.yml                       # Bandit SAST config
 ├── .gitleaks.toml                    # Gitleaks config
 ├── .trivyignore                      # Trivy accepted risks
