@@ -38,7 +38,12 @@ terraform/.terraform/
 terraform/*.tfstate
 terraform/*.tfstate.backup
 terraform/*.tfplan
+terraform/tfplan
 terraform/.terraform.lock.hcl
+terraform/backend.tfvars
+
+# POC evidence (local only)
+poc-evidence/
 
 # OS
 .DS_Store

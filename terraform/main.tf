@@ -12,12 +12,12 @@ terraform {
     }
   }
 
+  # Backend config is partial — bucket and dynamodb_table are passed at init:
+  #   terraform init -backend-config=backend.tfvars
   backend "s3" {
-    bucket         = "devsecops-pipeline-tfstate-132141656493"
-    key            = "prod/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "devsecops-pipeline-tfstate-lock"
+    key     = "prod/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
   }
 }
 
