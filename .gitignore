@@ -51,5 +51,9 @@ Thumbs.db
 # SQLite databases
 *.db
 
+# Markdown (except README)
+*.md
+!README.md
+
 # Claude Code
 .claude/
