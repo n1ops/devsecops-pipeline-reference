@@ -5,7 +5,7 @@ pydantic==2.10.0
 pydantic-settings==2.13.1
 
 # Database
-sqlalchemy==2.0.36
+sqlalchemy==2.0.47
 
 # Auth
 PyJWT==2.10.1
