@@ -120,7 +120,7 @@ jobs:
 
       - name: Set up Node.js
         if: ${{ inputs.language == 'javascript' || inputs.language == 'typescript' }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.runtime-version }}
 
@@ -180,7 +180,7 @@ jobs:
 
       - name: Set up Node.js
         if: ${{ inputs.language == 'javascript' || inputs.language == 'typescript' }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.runtime-version }}
 
@@ -234,7 +234,7 @@ jobs:
 
       - name: Set up Node.js
         if: ${{ inputs.language == 'javascript' || inputs.language == 'typescript' }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.runtime-version }}
 
@@ -344,7 +344,7 @@ jobs:
 
       - name: Set up Node.js
         if: ${{ inputs.language == 'javascript' || inputs.language == 'typescript' }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.runtime-version }}
 
